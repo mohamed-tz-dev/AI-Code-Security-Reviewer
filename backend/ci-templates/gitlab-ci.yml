@@ -1,0 +1,17 @@
+stages:
+  - security
+
+security_scan:
+  stage: security
+  image: curlimages/curl:latest
+  script:
+    - |
+      curl -X POST \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $SECURITY_REVIEW_API_TOKEN" \
+        -d '{
+          "repositoryUrl": "$CI_PROJECT_URL",
+          "branch": "$CI_COMMIT_REF_NAME",
+          "commitSha": "$CI_COMMIT_SHA"
+        }' \
+        "$SECURITY_REVIEW_API_URL/api/scans/github"

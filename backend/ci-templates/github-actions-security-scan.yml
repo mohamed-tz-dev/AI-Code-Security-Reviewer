@@ -1,0 +1,25 @@
+name: Security Scan
+
+on:
+  push:
+    branches:
+      - main
+      - '**'
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  trigger-security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger AI security scan
+        run: |
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $SECURITY_REVIEW_API_TOKEN" \
+            -d '{
+              "repositoryUrl": "https://github.com/${{ github.repository }}",
+              "branch": "${{ github.ref_name }}",
+              "commitSha": "${{ github.sha }}"
+            }' \
+            "$SECURITY_REVIEW_API_URL/api/scans/github"
