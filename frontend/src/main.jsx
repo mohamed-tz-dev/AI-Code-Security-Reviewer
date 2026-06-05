@@ -875,11 +875,14 @@ function SignInScreen({ onAuthenticated }) {
     e.preventDefault();
     setError(''); setBusy(true);
     try {
-      // Legacy email/password login disabled when Clerk is enabled.
-      // Use Clerk sign-in instead.
-      setBusy(false);
-      setError('Use the Clerk sign-in button to authenticate.');
-      return;
+      const path = mode === 'admin'
+        ? '/api/auth/admin/login'
+        : mode === 'register'
+          ? '/api/auth/register'
+          : '/api/auth/login';
+      const result = await submitAuth(path, { email, password });
+      window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(result));
+      onAuthenticated(result);
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
   }
@@ -927,23 +930,7 @@ function SignInScreen({ onAuthenticated }) {
               <div className="clerk-form">
                 <form
                   className="auth-form"
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    setBusy(true);
-                    setError('');
-
-                    try {
-                      // Use Clerk SignIn (email/password providers) via the browser SDK.
-                      // NOTE: window.__clerk_signin may not be available/ready at submit time.
-                      // Prefer the built-in Clerk flow to avoid timing issues.
-                      setError('Email/password sign-in using Clerk is not initialized yet. Use the Google button instead.');
-                      return;
-                    } catch (err) {
-                      setError(err?.message || 'Sign-in failed.');
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
+                  onSubmit={handleSubmit}
                 >
                   <div className="auth-field">
                     <div className="auth-label">Email</div>
@@ -981,11 +968,11 @@ function SignInScreen({ onAuthenticated }) {
                   </div>
 
                   <button id="auth-submit" className="primary-auth-button" type="submit" disabled={busy}>
-                    {busy ? 'Please wait…' : 'Login'}
+                    {busy ? 'Please wait…' : mode === 'register' ? 'Create account' : 'Login'}
                   </button>
 
                   <div className="auth-divider">
-                    <span>or Sign in with Email</span>
+                    <span>or continue with Google</span>
                   </div>
 
                   <div className="auth-google-row">
@@ -993,7 +980,9 @@ function SignInScreen({ onAuthenticated }) {
                   </div>
 
                   <div className="auth-footer">
-                    Not Registered Yet? <a href="#" onClick={(e)=>e.preventDefault()}>Create an account</a>
+                    {mode === 'register'
+                      ? <>Already have an account? <a href="#" onClick={(e)=>{e.preventDefault(); setMode('login'); setError('');}}>Sign in</a></>
+                      : <>Not Registered Yet? <a href="#" onClick={(e)=>{e.preventDefault(); setMode('register'); setError('');}}>Create an account</a></>}
                   </div>
                 </form>
               </div>
