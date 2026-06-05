@@ -8,6 +8,7 @@ import {
 } from '@clerk/clerk-react';
 import {
   AlertTriangle,
+  ArrowRight,
   BarChart2,
   Bot,
   CheckCircle2,
@@ -16,6 +17,8 @@ import {
   Download,
   FileArchive,
   FileText,
+  GitBranch,
+  GitPullRequest,
   Github,
   Lock,
   LogOut,
@@ -23,6 +26,7 @@ import {
   RefreshCw,
   Search,
   Shield,
+  ShieldCheck,
   Upload,
   Users,
   XCircle,
@@ -201,6 +205,33 @@ function SeverityChart({ counts }) {
   );
 }
 
+const SEVERITY_TIERS = [
+  { key: 'high',   label: 'High Severity',   blurb: 'Exploitable now — fix immediately', color: 'var(--critical)', includes: ['critical', 'high'] },
+  { key: 'medium', label: 'Medium Severity', blurb: 'Should be remediated soon',          color: 'var(--medium)',   includes: ['medium'] },
+  { key: 'low',    label: 'Low Severity',    blurb: 'Best-practice / hardening',            color: 'var(--low)',      includes: ['low', 'info'] }
+];
+
+function SeverityCategoryCards({ counts }) {
+  const tierCounts = SEVERITY_TIERS.map((tier) => ({
+    ...tier,
+    count: tier.includes.reduce((sum, sev) => sum + (counts[sev] || 0), 0)
+  }));
+  return (
+    <div className="severity-cards">
+      {tierCounts.map((tier) => (
+        <div key={tier.key} className={`severity-card severity-card-${tier.key}`}>
+          <div className="severity-card-top">
+            <span className="severity-card-dot" style={{ background: tier.color }} />
+            <span className="severity-card-label" style={{ color: tier.color }}>{tier.label}</span>
+          </div>
+          <strong className="severity-card-count" style={{ color: tier.color }}>{tier.count}</strong>
+          <span className="severity-card-blurb">{tier.blurb}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function escapeHtml(str) {
   return String(str ?? '')
     .replaceAll('&','&amp;')
@@ -217,9 +248,13 @@ function buildPrintHtml(scan, vulnerabilities) {
   const medium = counts.medium || 0;
   const low = (counts.low || 0) + (counts.info || 0);
 
-  const sorted = [...(vulnerabilities || [])].sort((a,b) => severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity));
+  const tierMeta = [
+    { key: 'high',   label: 'High Severity',   color: '#d12c3b', includes: ['critical', 'high'] },
+    { key: 'medium', label: 'Medium Severity', color: '#b9770a', includes: ['medium'] },
+    { key: 'low',    label: 'Low Severity',    color: '#2f6bd1', includes: ['low', 'info'] }
+  ];
 
-  const findingsHtml = sorted.map(v => {
+  const renderFinding = (v) => {
     const secure = v.secure_patch ?? v.securePatch ?? '';
     return `
       <div class="card finding">
@@ -228,8 +263,19 @@ function buildPrintHtml(scan, vulnerabilities) {
         ${v.description ? `<div style="margin-top:8px;">${escapeHtml(v.description)}</div>` : ''}
         ${v.recommendation ? `<div style="margin-top:8px;"><strong>Remediation</strong><div>${escapeHtml(v.recommendation)}</div></div>` : ''}
         ${v.evidence ? `<div style="margin-top:10px;"><strong>Evidence</strong><pre>${escapeHtml(v.evidence)}</pre></div>` : ''}
-        ${secure ? `<div style="margin-top:10px;"><strong>Secure patch</strong><pre>${escapeHtml(secure)}</pre></div>` : ''}
+        ${secure ? `<div style="margin-top:10px;"><strong>Secure patch (AI)</strong><pre>${escapeHtml(secure)}</pre></div>` : ''}
       </div>
+    `;
+  };
+
+  const findingsHtml = tierMeta.map((tier) => {
+    const items = (vulnerabilities || [])
+      .filter((v) => tier.includes.includes(String(v.severity || 'info').toLowerCase()))
+      .sort((a, b) => severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity));
+    if (!items.length) return '';
+    return `
+      <h2 class="tier" style="border-left:6px solid ${tier.color};color:${tier.color};">${tier.label} <span style="color:#888;font-weight:600;">(${items.length})</span></h2>
+      ${items.map(renderFinding).join('')}
     `;
   }).join('');
 
@@ -248,6 +294,7 @@ function buildPrintHtml(scan, vulnerabilities) {
           .high { background:#ffecec; border-color:#ffb3b3; }
           .medium { background:#fff3db; border-color:#ffe2a8; }
           .low { background:#e9f1ff; border-color:#bcd1ff; }
+          .tier { font-size:15px; margin:22px 0 6px; padding:6px 0 6px 12px; }
           .card { border:1px solid #e5e5e5; border-radius:14px; padding:14px; margin: 12px 0; }
           .sev { font-weight: 800; }
           pre { background:#0b0b0b; color:#d7ffd9; padding: 10px; border-radius: 10px; overflow-x: auto; }
@@ -553,15 +600,38 @@ function FindingCard({ finding, scanId, getToken }) {
 
 /* ─── Vulnerability Table ──────────────────────────────────── */
 function VulnerabilityTable({ vulnerabilities, scanId, getToken }) {
-  const sorted = useMemo(()=>[...vulnerabilities].sort((a,b)=>severityOrder.indexOf(a.severity)-severityOrder.indexOf(b.severity)),[vulnerabilities]);
-  if (!sorted.length) return (
+  const groups = useMemo(() => {
+    return SEVERITY_TIERS.map((tier) => ({
+      ...tier,
+      items: [...vulnerabilities]
+        .filter((v) => tier.includes.includes(String(v.severity || 'info').toLowerCase()))
+        .sort((a, b) => severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity))
+    })).filter((g) => g.items.length > 0);
+  }, [vulnerabilities]);
+
+  if (!vulnerabilities.length) return (
     <div className="empty-state">
       <div className="empty-state-icon"><CheckCircle2 size={32}/></div>
       <div className="empty-state-title">No vulnerabilities found</div>
       <div className="empty-state-desc">This scan completed with no recorded security findings.</div>
     </div>
   );
-  return <div className="vulnerability-list">{sorted.map(f=><FindingCard key={f.id} finding={f} scanId={scanId} getToken={getToken}/>)}</div>;
+  return (
+    <div className="vulnerability-groups">
+      {groups.map((group) => (
+        <section key={group.key} className={`severity-group severity-group-${group.key}`}>
+          <header className="severity-group-header" style={{ borderColor: group.color }}>
+            <span className="severity-group-dot" style={{ background: group.color }} />
+            <h3 style={{ color: group.color }}>{group.label}</h3>
+            <span className="severity-group-count">{group.items.length}</span>
+          </header>
+          <div className="vulnerability-list">
+            {group.items.map((f) => <FindingCard key={f.id} finding={f} scanId={scanId} getToken={getToken}/>)}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
 }
 
 /* ─── Report Panel ─────────────────────────────────────────── */
@@ -606,11 +676,11 @@ function ReportPanel({ scan, loading, getToken, setNotice, onExported }) {
           <button className="secondary-action" onClick={()=>{
             try {
               const html = buildPrintHtml(scan, vulns);
-              const w = window.open('', '_blank', 'noopener,noreferrer');
+              const blob = new Blob([html], { type: 'text/html' });
+              const url  = URL.createObjectURL(blob);
+              const w = window.open(url, '_blank');
               if (!w) throw new Error('Popup blocked. Please allow popups for this site.');
-              w.document.open();
-              w.document.write(html);
-              w.document.close();
+              setTimeout(()=>URL.revokeObjectURL(url), 60000);
               setNotice({type:'success',message:'Report opened for printing.'});
             } catch (err) {
               setNotice({type:'error',message:err.message});
@@ -625,6 +695,7 @@ function ReportPanel({ scan, loading, getToken, setNotice, onExported }) {
         <div><span>Critical / High</span><strong>{vulns.filter(v=>['critical','high'].includes(v.severity)).length}</strong></div>
         <div><span>Completed</span><strong style={{fontSize:14}}>{scan.completed_at?formatDate(scan.completed_at):'—'}</strong></div>
       </div>
+      <SeverityCategoryCards counts={getSeverityCounts(vulns)}/>
       <SeverityChart counts={getSeverityCounts(vulns)}/>
       <VulnerabilityTable vulnerabilities={vulns} scanId={scan.id} getToken={getToken}/>
     </section>
@@ -762,6 +833,55 @@ function SettingsPanel({ currentUser, settings, busy, onSave, setSettings }) {
   );
 }
 
+/* ─── CI/CD Pipeline Blueprint (roadmap) ───────────────────── */
+function PipelineBlueprint() {
+  const steps = [
+    { Icon: GitBranch,       title: 'Developer pushes code',  desc: 'Commit / open Pull Request on GitHub' },
+    { Icon: Github,          title: 'GitHub Action triggers', desc: 'ShieldAI runs automatically in CI' },
+    { Icon: ShieldCheck,     title: 'AI security scan',        desc: 'Static analysis + AI remediation' },
+    { Icon: GitPullRequest,  title: 'Gate the merge',          desc: 'Block PR if Critical/High found' }
+  ];
+  const workflowYaml = `name: ShieldAI Security Review
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  shieldai-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run ShieldAI scan
+        uses: shieldai/scan-action@v1
+        with:
+          fail-on: high   # block merge on Critical/High`;
+  return (
+    <section className="panel blueprint-panel">
+      <div className="blueprint-head">
+        <span className="blueprint-badge"><Zap size={11}/>Roadmap · CI/CD Integration</span>
+        <h2>GitHub Action Blueprint</h2>
+        <p>Shift security left — ShieldAI runs inside your pipeline so every push is scanned <strong>before</strong> it merges.</p>
+      </div>
+      <div className="pipeline-flow">
+        {steps.map(({ Icon, title, desc }, i) => (
+          <React.Fragment key={title}>
+            <div className="pipeline-node">
+              <div className="pipeline-node-icon"><Icon size={20}/></div>
+              <strong>{title}</strong>
+              <span>{desc}</span>
+            </div>
+            {i < steps.length - 1 && <ArrowRight className="pipeline-arrow" size={18}/>}
+          </React.Fragment>
+        ))}
+      </div>
+      <div className="blueprint-yaml">
+        <div className="blueprint-yaml-head"><FileText size={13}/><span>.github/workflows/shieldai.yml</span><span className="blueprint-soon">Preview</span></div>
+        <pre>{workflowYaml}</pre>
+      </div>
+    </section>
+  );
+}
+
 /* ─── Welcome Panel ────────────────────────────────────────── */
 function WelcomePanel({ currentUser, role, onNavigate, activeCount }) {
   const name = currentUser.email.split('@')[0] || currentUser.email;
@@ -790,6 +910,7 @@ function WelcomePanel({ currentUser, role, onNavigate, activeCount }) {
           {role==='admin'&&<button onClick={()=>onNavigate('admin')}><Users size={15}/>Admin</button>}
         </div>
       </div>
+      <PipelineBlueprint/>
     </section>
   );
 }
