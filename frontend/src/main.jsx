@@ -154,20 +154,37 @@ function ScoreRing({ score }) {
 }
 
 /* ─── Severity Chart ───────────────────────────────────────── */
+function severityBucket(sev) {
+  const s = String(sev || '').toLowerCase();
+  if (['critical', 'high'].includes(s)) return 'high';
+  if (['medium'].includes(s)) return 'medium';
+  if (['low', 'info'].includes(s)) return 'low';
+  return 'low';
+}
+
 function SeverityChart({ counts }) {
-  const total = Object.values(counts).reduce((s,v)=>s+v,0);
+  const bucketCounts = severityOrder.reduce((acc, sev) => {
+    const b = severityBucket(sev);
+    acc[b] = (acc[b] || 0) + (counts[sev] || 0);
+    return acc;
+  }, { high: 0, medium: 0, low: 0 });
+
+  const total = bucketCounts.high + bucketCounts.medium + bucketCounts.low;
   if (!total) return <div className="empty-state">No severity findings to display.</div>;
-  const clr = { critical:'var(--critical)', high:'var(--high)', medium:'var(--medium)', low:'var(--low)', info:'var(--info)' };
+
+  const clr = { high: 'var(--critical)', medium: 'var(--medium)', low: 'var(--low)' };
+  const labelMap = { high: 'High', medium: 'Medium', low: 'Low' };
+
   return (
     <div className="severity-chart">
-      <div className="severity-chart-header"><span>Severity distribution</span><strong>{total} findings</strong></div>
-      {severityOrder.map(sev => {
-        const count = counts[sev]||0;
+      <div className="severity-chart-header"><span>Severity (High/Medium/Low)</span><strong>{total} findings</strong></div>
+      {['high','medium','low'].map(sev => {
+        const count = bucketCounts[sev] || 0;
         return (
           <div key={sev} className="severity-chart-row">
-            <span className={`severity-chart-label severity-${sev}`}>{sev}</span>
+            <span className="severity-chart-label" style={{ color: clr[sev] }}>{labelMap[sev]}</span>
             <div className="severity-chart-track">
-              <div className="severity-chart-fill" style={{ width:total?`${(count/total)*100}%`:'0%', background:clr[sev] }}/>
+              <div className="severity-chart-fill" style={{ width: total ? `${(count/total)*100}%` : '0%', background: clr[sev] }} />
             </div>
             <span className="severity-chart-count">{count}</span>
           </div>
@@ -176,6 +193,78 @@ function SeverityChart({ counts }) {
     </div>
   );
 }
+
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replaceAll('&','&amp;')
+    .replaceAll('<','<')
+    .replaceAll('>','>')
+    .replaceAll('"','"')
+    .replaceAll("'",'&#039;');
+}
+
+function buildPrintHtml(scan, vulnerabilities) {
+  const now = new Date().toISOString();
+  const counts = getSeverityCounts(vulnerabilities || []);
+  const high = (counts.critical || 0) + (counts.high || 0);
+  const medium = counts.medium || 0;
+  const low = (counts.low || 0) + (counts.info || 0);
+
+  const sorted = [...(vulnerabilities || [])].sort((a,b) => severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity));
+
+  const findingsHtml = sorted.map(v => {
+    const secure = v.secure_patch ?? v.securePatch ?? '';
+    return `
+      <div class="card finding">
+        <div><span class="sev">${escapeHtml(v.severity || 'info').toUpperCase()}</span> — <strong>${escapeHtml(v.title || 'Untitled')}</strong></div>
+        ${v.file_path ? `<div style="color:#666;font-size:12px;margin-top:6px;">${escapeHtml(v.file_path)}${v.line_start?`:${v.line_start}`:''}</div>` : ''}
+        ${v.description ? `<div style="margin-top:8px;">${escapeHtml(v.description)}</div>` : ''}
+        ${v.recommendation ? `<div style="margin-top:8px;"><strong>Remediation</strong><div>${escapeHtml(v.recommendation)}</div></div>` : ''}
+        ${v.evidence ? `<div style="margin-top:10px;"><strong>Evidence</strong><pre>${escapeHtml(v.evidence)}</pre></div>` : ''}
+        ${secure ? `<div style="margin-top:10px;"><strong>Secure patch</strong><pre>${escapeHtml(secure)}</pre></div>` : ''}
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8"/>
+        <title>${escapeHtml(scan?.project_name || 'Security Report')}</title>
+        <style>
+          body { font-family: Inter, Arial, sans-serif; padding: 24px; }
+          h1 { margin:0 0 6px; font-size: 22px; }
+          .meta { color:#444; font-size: 12px; margin-bottom: 14px; }
+          .strip { display:flex; gap: 10px; margin: 10px 0 18px; }
+          .pill { padding: 8px 10px; border-radius: 12px; border: 1px solid #ddd; font-weight: 800; }
+          .high { background:#ffecec; border-color:#ffb3b3; }
+          .medium { background:#fff3db; border-color:#ffe2a8; }
+          .low { background:#e9f1ff; border-color:#bcd1ff; }
+          .card { border:1px solid #e5e5e5; border-radius:14px; padding:14px; margin: 12px 0; }
+          .sev { font-weight: 800; }
+          pre { background:#0b0b0b; color:#d7ffd9; padding: 10px; border-radius: 10px; overflow-x: auto; }
+          @media print { body { padding: 0; } .no-print { display:none; } }
+        </style>
+      </head>
+      <body>
+        <div class="no-print" style="margin-bottom:14px;">
+          <button onclick="window.print()" style="padding:10px 14px;border-radius:10px;border:1px solid #ddd;background:#f7f7f7;cursor:pointer;">Print / Save PDF</button>
+        </div>
+        <h1>ShieldAI Security Report</h1>
+        <div class="meta">Project: <strong>${escapeHtml(scan?.project_name || '')}</strong> · Created: <strong>${escapeHtml(scan?.created_at ? formatDate(scan.created_at) : '—')}</strong></div>
+        <div class="strip">
+          <div class="pill high">High: ${high}</div>
+          <div class="pill medium">Medium: ${medium}</div>
+          <div class="pill low">Low: ${low}</div>
+        </div>
+        ${findingsHtml}
+        <div class="meta" style="margin-top:18px;">Generated at: ${escapeHtml(now)}</div>
+      </body>
+    </html>
+  `;
+}
+
 
 /* ─── Skeletons ────────────────────────────────────────────── */
 function SkeletonScanList()  { return <div className="scan-list">{[1,2,3].map(i=><div key={i} className="skeleton skeleton-scan-row"/>)}</div>; }
@@ -423,9 +512,27 @@ function ReportPanel({ scan, loading, getToken, setNotice, onExported }) {
         </div>
         <div className="report-actions">
           <button className="secondary-action" onClick={async()=>{
-            try { await downloadScanPdf(scan,getToken); setNotice({type:'success',message:'PDF exported.'}); onExported(); }
-            catch(err) { setNotice({type:'error',message:err.message}); }
+            try {
+              await downloadScanPdf(scan,getToken);
+              setNotice({type:'success',message:'PDF exported.'});
+              onExported();
+            } catch(err) {
+              setNotice({type:'error',message:err.message});
+            }
           }}><Download size={13}/>Export PDF</button>
+          <button className="secondary-action" onClick={()=>{
+            try {
+              const html = buildPrintHtml(scan, vulns);
+              const w = window.open('', '_blank', 'noopener,noreferrer');
+              if (!w) throw new Error('Popup blocked. Please allow popups for this site.');
+              w.document.open();
+              w.document.write(html);
+              w.document.close();
+              setNotice({type:'success',message:'Report opened for printing.'});
+            } catch (err) {
+              setNotice({type:'error',message:err.message});
+            }
+          }}><FileText size={13}/>Export HTML</button>
           <ScoreRing score={scan.security_score}/>
         </div>
       </div>
