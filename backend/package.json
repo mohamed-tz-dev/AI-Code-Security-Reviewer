@@ -5,8 +5,10 @@
   "main": "src/server.js",
   "type": "commonjs",
   "scripts": {
-    "dev": "nodemon src/server.js",
-    "start": "node src/server.js",
+    "dev": "concurrently -n api,worker -c blue,magenta \"nodemon src/server.js\" \"nodemon src/workers/scan.worker.js\"",
+    "dev:api": "nodemon src/server.js",
+    "start": "concurrently -n api,worker -c blue,magenta \"node src/server.js\" \"node src/workers/scan.worker.js\"",
+    "start:api": "node src/server.js",
     "test": "jest --runInBand",
     "worker": "node src/workers/scan.worker.js",
     "check:services": "node scripts/check-services.js",
@@ -29,7 +31,12 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.9",
-    "jest": "^29.6.1"
+    "concurrently": "^9.2.1",
+    "jest": "^29.6.1",
+    "nodemon": "^3.1.9"
+  },
+  "jest": {
+    "testPathIgnorePatterns": ["/node_modules/", "/storage/"],
+    "modulePathIgnorePatterns": ["<rootDir>/storage/"]
   }
 }

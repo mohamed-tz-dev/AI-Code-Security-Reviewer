@@ -234,7 +234,10 @@ async function askWithGroq(prompt) {
 
 async function askQuestion(question, scan) {
   if (!isChatConfigured()) {
-    throw new Error('AI chat is not configured for this platform. Please enable AI_ANALYSIS_ENABLED and set provider credentials.');
+    const error = new Error('AI chat is not configured for this platform. Ask an admin to enable AI_ANALYSIS_ENABLED and set an AI provider API key.');
+    error.statusCode = 503;
+    error.expose = true;
+    throw error;
   }
 
   const prompt = buildChatPrompt(question, scan);

@@ -12,6 +12,7 @@ function errorHandler(error, _req, res, _next) {
   }
 
   const statusCode = error.statusCode || 500;
+  const exposeMessage = statusCode < 500 || error.expose === true;
 
   if (statusCode >= 500) {
     console.error(error);
@@ -19,7 +20,7 @@ function errorHandler(error, _req, res, _next) {
 
   res.status(statusCode).json({
     error: {
-      message: statusCode >= 500 ? 'Internal server error' : error.message
+      message: exposeMessage ? error.message : 'Internal server error'
     }
   });
 }
