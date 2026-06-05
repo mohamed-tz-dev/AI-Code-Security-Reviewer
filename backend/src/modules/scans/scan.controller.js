@@ -7,8 +7,9 @@ const { scanQueue } = require('../../queue/scan.queue');
 const auditRepository = require('../audit/audit.repository');
 const { createScanReportPdf } = require('../../lib/pdf.service');
 const scanRepository = require('./scan.repository');
+const vulnerabilityRepository = require('../vulnerabilities/vulnerability.repository');
 const { env } = require('../../config/env');
-const { askQuestion } = require('../../scanner/chat.service');
+const { askQuestion, generateSecurePatch } = require('../../scanner/chat.service');
 
 const githubScanSchema = z.object({
   repositoryUrl: z.string().url(),
@@ -358,12 +359,44 @@ async function getAdminSummary(_req, res) {
   res.json({ summary });
 }
 
+async function generateFindingPatch(req, res) {
+  const paramsSchema = z.object({
+    scanId: z.string().uuid(),
+    findingId: z.string().uuid()
+  });
+
+  const { scanId, findingId } = paramsSchema.parse(req.params);
+
+  const scan = await scanRepository.getScanById(scanId, {
+    userId: req.currentUser.id,
+    isAdmin: req.currentUser.isAdmin
+  });
+
+  if (!scan) {
+    res.status(404).json({ error: { message: 'Scan not found.' } });
+    return;
+  }
+
+  const finding = scan.vulnerabilities.find((item) => item.id === findingId);
+
+  if (!finding) {
+    res.status(404).json({ error: { message: 'Finding not found.' } });
+    return;
+  }
+
+  const securePatch = await generateSecurePatch(finding);
+  const updated = await vulnerabilityRepository.setSecurePatch(findingId, securePatch);
+
+  res.json({ securePatch, finding: updated });
+}
+
 module.exports = {
   createZipScan,
   createGithubScan,
   githubWebhook,
   exportScanPdf,
   askChat,
+  generateFindingPatch,
   getAdminSummary,
   getCiTemplate,
   listCiTemplates,

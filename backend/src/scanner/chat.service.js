@@ -232,16 +232,16 @@ async function askWithGroq(prompt) {
   return responseBody.choices?.[0]?.message?.content?.trim() || '';
 }
 
-async function askQuestion(question, scan) {
+function ensureConfigured() {
   if (!isChatConfigured()) {
-    const error = new Error('AI chat is not configured for this platform. Ask an admin to enable AI_ANALYSIS_ENABLED and set an AI provider API key.');
+    const error = new Error('AI is not configured for this platform. Ask an admin to enable AI_ANALYSIS_ENABLED and set an AI provider API key.');
     error.statusCode = 503;
     error.expose = true;
     throw error;
   }
+}
 
-  const prompt = buildChatPrompt(question, scan);
-
+async function runPrompt(prompt) {
   if (env.aiProvider === 'openai') {
     return askWithOpenAi(prompt);
   }
@@ -257,4 +257,36 @@ async function askQuestion(question, scan) {
   throw new Error('Unsupported AI provider.');
 }
 
-module.exports = { askQuestion, isChatConfigured };
+async function askQuestion(question, scan) {
+  ensureConfigured();
+  return runPrompt(buildChatPrompt(question, scan));
+}
+
+function stripCodeFences(text) {
+  const trimmed = String(text || '').trim();
+  const fenced = trimmed.match(/^```[a-zA-Z0-9]*\n([\s\S]*?)\n```$/);
+  return (fenced ? fenced[1] : trimmed).trim();
+}
+
+function buildSecurePatchPrompt(finding) {
+  const insecure = finding.evidence || finding.description || '';
+  return `You are an expert application security engineer. Rewrite the following INSECURE code so the security vulnerability is fixed, while keeping the same language and intended behavior.
+
+Vulnerability: ${finding.title} (${finding.severity})
+File: ${finding.file_path || finding.filePath || 'unknown'}
+Why it is a problem: ${finding.description || 'n/a'}
+Recommended remediation: ${finding.recommendation || 'n/a'}
+
+INSECURE CODE:
+${insecure}
+
+Return ONLY the corrected, secure code. Do not add explanations or Markdown code fences.`;
+}
+
+async function generateSecurePatch(finding) {
+  ensureConfigured();
+  const answer = await runPrompt(buildSecurePatchPrompt(finding));
+  return stripCodeFences(answer);
+}
+
+module.exports = { askQuestion, generateSecurePatch, isChatConfigured };

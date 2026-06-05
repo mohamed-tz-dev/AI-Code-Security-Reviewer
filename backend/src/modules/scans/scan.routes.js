@@ -17,5 +17,6 @@ scanRoutes.get('/:scanId', asyncHandler(scanController.getScan));
 scanRoutes.post('/zip', uploadZip.single('repository'), asyncHandler(scanController.createZipScan));
 scanRoutes.post('/github', asyncHandler(scanController.createGithubScan));
 scanRoutes.post('/chat', asyncHandler(scanController.askChat));
+scanRoutes.post('/:scanId/findings/:findingId/secure-patch', asyncHandler(scanController.generateFindingPatch));
 
 module.exports = { scanRoutes };

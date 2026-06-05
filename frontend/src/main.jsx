@@ -117,6 +117,13 @@ async function downloadScanPdf(scan, getToken) {
 async function loadSettings(getToken)          { const r = await fetch(`${API_BASE_URL}/api/settings`, { headers: await getAuthHeaders(getToken) }); if (!r.ok) throw new Error(`Settings failed (${r.status})`); return r.json(); }
 async function saveSettings(payload, getToken) { const r = await fetch(`${API_BASE_URL}/api/settings`, { method:'PATCH', headers:{...(await getAuthHeaders(getToken)),'Content-Type':'application/json'}, body:JSON.stringify(payload) }); if (!r.ok) { const b=await r.json().catch(()=>null); throw new Error(b?.error?.message||`Settings failed (${r.status})`); } return r.json(); }
 async function sendChatQuestion(payload, getToken) { const r = await fetch(`${API_BASE_URL}/api/scans/chat`, { method:'POST', headers:{...(await getAuthHeaders(getToken)),'Content-Type':'application/json'}, body:JSON.stringify(payload) }); if (!r.ok) { const b=await r.json().catch(()=>null); throw new Error(b?.error?.message||`Chat failed (${r.status})`); } return r.json(); }
+async function requestSecurePatch(scanId, findingId, getToken) {
+  const r = await fetch(`${API_BASE_URL}/api/scans/${scanId}/findings/${findingId}/secure-patch`, {
+    method:'POST', headers:{...(await getAuthHeaders(getToken)),'Content-Type':'application/json'}, body:'{}'
+  });
+  if (!r.ok) { const b=await r.json().catch(()=>null); throw new Error(b?.error?.message||`AI fix failed (${r.status})`); }
+  return r.json();
+}
 
 /* ─── Status Badge ─────────────────────────────────────────── */
 function StatusBadge({ status }) {
@@ -400,12 +407,81 @@ function ScanHistory({ scans, selectedScanId, onSelectScan, onRefresh, loading, 
   );
 }
 
+/* ─── Line diff (LCS) for side-by-side code compare ────────── */
+function diffLines(aText, bText) {
+  const a = String(aText || '').replace(/\r\n/g, '\n').split('\n');
+  const b = String(bText || '').replace(/\r\n/g, '\n').split('\n');
+  const n = a.length;
+  const m = b.length;
+  const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const left = [];
+  const right = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      left.push({ t: 'equal', text: a[i] }); right.push({ t: 'equal', text: b[j] }); i++; j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      left.push({ t: 'remove', text: a[i] }); right.push({ t: 'spacer', text: '' }); i++;
+    } else {
+      left.push({ t: 'spacer', text: '' }); right.push({ t: 'add', text: b[j] }); j++;
+    }
+  }
+  while (i < n) { left.push({ t: 'remove', text: a[i] }); right.push({ t: 'spacer', text: '' }); i++; }
+  while (j < m) { left.push({ t: 'spacer', text: '' }); right.push({ t: 'add', text: b[j] }); j++; }
+  return { left, right };
+}
+
+function DiffColumn({ rows }) {
+  return (
+    <pre className="code-pre diff-pre">
+      {rows.map((row, idx) => (
+        <div key={idx} className={`diff-line diff-${row.t}`}>{row.text === '' ? '\u00A0' : row.text}</div>
+      ))}
+    </pre>
+  );
+}
+
 /* ─── Collapsible Finding ──────────────────────────────────── */
-function SecuredPatchView({ finding }) {
+function SecuredPatchView({ finding, scanId, getToken }) {
   const insecure = finding?.evidence || '';
-  const secure   = finding?.secure_patch ?? finding?.securePatch ?? '';
+  const [secure, setSecure] = useState(finding?.secure_patch ?? finding?.securePatch ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setSecure(finding?.secure_patch ?? finding?.securePatch ?? '');
+    setError('');
+  }, [finding?.id]);
 
   const hasSecure = Boolean(String(secure).trim());
+  const diff = hasSecure ? diffLines(insecure, secure) : null;
+
+  const onGenerate = async () => {
+    if (!scanId || !finding?.id) {
+      setError('Cannot generate a fix for this finding.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const res = await requestSecurePatch(scanId, finding.id, getToken);
+      const patch = res.securePatch || '';
+      setSecure(patch);
+      if (!String(patch).trim()) {
+        setError('AI did not return a patch for this finding.');
+      }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="code-compare">
@@ -418,28 +494,38 @@ function SecuredPatchView({ finding }) {
         </div>
       </div>
 
+      {error && <div className="notice error" style={{ marginBottom: 10 }}><AlertTriangle size={14}/>{error}</div>}
+
       {!hasSecure ? (
         <div className="empty-state" style={{ minHeight: 90 }}>
-          <div className="empty-state-title">Secure patch haipo kwa finding hii</div>
-          <div className="empty-state-desc">AI haijaweza kutoa patch code kwa sehemu hii (au si saved kwenye secure_patch).</div>
+          <div className="empty-state-title">No AI secure patch yet</div>
+          <div className="empty-state-desc">Generate a secured code snippet for this finding using your AI provider.</div>
+          <button type="button" className="primary-action" style={{ marginTop: 12 }} disabled={busy} onClick={onGenerate}>
+            {busy ? <><RefreshCw size={14} className="spin"/>Generating…</> : <><Zap size={14}/>Generate AI fix</>}
+          </button>
         </div>
       ) : (
-        <div className="code-compare-grid">
-          <div className="code-compare-col code-col-insecure">
-            <div className="code-compare-col-title">Insecure (evidence)</div>
-            <pre className="code-pre">{String(insecure || '').trim() ? insecure : 'No evidence provided.'}</pre>
+        <>
+          <div className="code-compare-grid">
+            <div className="code-compare-col code-col-insecure">
+              <div className="code-compare-col-title">Insecure code</div>
+              <DiffColumn rows={diff.left}/>
+            </div>
+            <div className="code-compare-col code-col-secure">
+              <div className="code-compare-col-title">Secure code (AI)</div>
+              <DiffColumn rows={diff.right}/>
+            </div>
           </div>
-          <div className="code-compare-col code-col-secure">
-            <div className="code-compare-col-title">Secure (AI secure_patch)</div>
-            <pre className="code-pre">{secure}</pre>
-          </div>
-        </div>
+          <button type="button" className="secondary-action" style={{ marginTop: 10 }} disabled={busy} onClick={onGenerate}>
+            {busy ? <><RefreshCw size={13} className="spin"/>Regenerating…</> : <><RefreshCw size={13}/>Regenerate AI fix</>}
+          </button>
+        </>
       )}
     </div>
   );
 }
 
-function FindingCard({ finding }) {
+function FindingCard({ finding, scanId, getToken }) {
   const [open, setOpen] = useState(false);
   return (
     <article className={`finding severity-${finding.severity} ${open?'open':''}`}>
@@ -457,11 +543,8 @@ function FindingCard({ finding }) {
           {finding.description && <p>{finding.description}</p>}
           {finding.recommendation && <div className="recommendation"><span>Remediation</span><p>{finding.recommendation}</p></div>}
 
-          {/* Old behavior: show evidence */}
-          {finding.evidence && <pre>{finding.evidence}</pre>}
-
-          {/* New modern diff view */}
-          <SecuredPatchView finding={finding} />
+          {/* Modern side-by-side AI remediation diff view */}
+          <SecuredPatchView finding={finding} scanId={scanId} getToken={getToken} />
         </div>
       </div>
     </article>
@@ -469,7 +552,7 @@ function FindingCard({ finding }) {
 }
 
 /* ─── Vulnerability Table ──────────────────────────────────── */
-function VulnerabilityTable({ vulnerabilities }) {
+function VulnerabilityTable({ vulnerabilities, scanId, getToken }) {
   const sorted = useMemo(()=>[...vulnerabilities].sort((a,b)=>severityOrder.indexOf(a.severity)-severityOrder.indexOf(b.severity)),[vulnerabilities]);
   if (!sorted.length) return (
     <div className="empty-state">
@@ -478,7 +561,7 @@ function VulnerabilityTable({ vulnerabilities }) {
       <div className="empty-state-desc">This scan completed with no recorded security findings.</div>
     </div>
   );
-  return <div className="vulnerability-list">{sorted.map(f=><FindingCard key={f.id} finding={f}/>)}</div>;
+  return <div className="vulnerability-list">{sorted.map(f=><FindingCard key={f.id} finding={f} scanId={scanId} getToken={getToken}/>)}</div>;
 }
 
 /* ─── Report Panel ─────────────────────────────────────────── */
@@ -543,7 +626,7 @@ function ReportPanel({ scan, loading, getToken, setNotice, onExported }) {
         <div><span>Completed</span><strong style={{fontSize:14}}>{scan.completed_at?formatDate(scan.completed_at):'—'}</strong></div>
       </div>
       <SeverityChart counts={getSeverityCounts(vulns)}/>
-      <VulnerabilityTable vulnerabilities={vulns}/>
+      <VulnerabilityTable vulnerabilities={vulns} scanId={scan.id} getToken={getToken}/>
     </section>
   );
 }
