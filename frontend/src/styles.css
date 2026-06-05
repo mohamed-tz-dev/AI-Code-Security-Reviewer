@@ -1082,6 +1082,65 @@ pre {
     var(--bg);
 }
 
+/* Auth form (Login page) — lightweight alignment with design prompt */
+.auth-card h1 { color: #111827; }
+
+.clerk-form .auth-form { display:grid; gap:12px; }
+
+.auth-field { display:grid; gap:6px; }
+.auth-label {
+  font-size:12px;
+  font-weight:800;
+  color:#374151;
+  text-transform:none;
+}
+
+.clerk-form input {
+  background: rgba(255,255,255,0.05);
+}
+
+.auth-underrow {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-top:2px;
+}
+
+.auth-remember { display:flex; align-items:center; gap:8px; color:#374151; font-size:12.5px; font-weight:600; }
+.auth-link { color: #A2396B; font-size:12.5px; font-weight:800; }
+
+.auth-divider {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:12px;
+  margin-top:6px;
+  margin-bottom:2px;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content:'';
+  height:1px;
+  flex:1;
+  background: rgba(0,0,0,0.08);
+}
+.auth-divider span {
+  font-size:12.5px;
+  font-weight:800;
+  color:#6B7280;
+}
+
+.auth-google-row { display:flex; justify-content:center; }
+
+.auth-footer {
+  font-size:12.5px;
+  color:#6B7280;
+  text-align:center;
+  margin-top:6px;
+}
+.auth-footer a { color:#A2396B; font-weight:900; }
+
 /* Left panel — branding */
 .auth-brand {
   display:none; /* shown on ≥ md */

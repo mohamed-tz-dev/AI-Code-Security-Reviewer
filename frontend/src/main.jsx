@@ -922,7 +922,6 @@ function SignInScreen({ onAuthenticated }) {
               : 'Sign in to your security dashboard or create a new account.'}
           </p>
 
-          {/* Clerk sign-in using email + username/password providers configured in Clerk dashboard */}
           {CLERK_PUB_KEY && mode !== 'admin' && (
             <>
               <div className="clerk-form">
@@ -934,27 +933,20 @@ function SignInScreen({ onAuthenticated }) {
                     setError('');
 
                     try {
-                      const payload = {
-                        identifier: email.trim(),
-                        password: password
-                      };
-
-                      // Use Clerk sign-in object from the hook.
-                      // We keep it inside global fallback for now, but prefer the hook-based path.
+                      // Use Clerk SignIn redirect flow (modern) for email/password providers.
+                      // Clerk handles the UI/verification; we only exchange token after callback.
                       const { signIn } = window.__clerk_signin || {};
-                      if (!signIn) throw new Error('Clerk sign-in not ready.');
-
-                      const { status } = await signIn.authenticateWithPassword(payload);
-                      if (status !== 'complete') {
-                        throw new Error('Additional verification required. Please complete sign-in in the redirect flow.');
+                      if (!signIn || typeof signIn.authenticateWithPassword !== 'function') {
+                        throw new Error('Clerk sign-in not ready.');
                       }
 
-                      const clerkToken = await signIn.__sessionToken?.();
-                      if (!clerkToken) throw new Error('Unable to retrieve Clerk session token.');
+                      await signIn.authenticateWithPassword({
+                        identifier: email.trim(),
+                        password: password
+                      });
 
-                      const result = await submitAuth('/api/auth/clerk', { clerkToken });
-                      window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(result));
-                      onAuthenticated(result);
+                      // After auth, Clerk will redirect back to /?sso-callback (configured in Clerk dashboard).
+                      // If your Clerk setup differs, adjust redirect URL inside Clerk.
                     } catch (err) {
                       setError(err?.message || 'Sign-in failed.');
                     } finally {
@@ -962,35 +954,58 @@ function SignInScreen({ onAuthenticated }) {
                     }
                   }}
                 >
-                  <input
-                    id="clerk-identifier"
-                    type="text"
-                    placeholder="Username or email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    autoComplete="username"
-                  />
-                  <input
-                    id="clerk-password"
-                    type="password"
-                    placeholder="Password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    autoComplete="current-password"
-                  />
+                  <div className="auth-field">
+                    <div className="auth-label">Email</div>
+                    <input
+                      id="clerk-identifier"
+                      type="text"
+                      placeholder="Email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      autoComplete="email"
+                    />
+                  </div>
+
+                  <div className="auth-field">
+                    <div className="auth-label">Password</div>
+                    <input
+                      id="clerk-password"
+                      type="password"
+                      placeholder="Password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      autoComplete="current-password"
+                    />
+                  </div>
 
                   {error && <div className="auth-error" role="alert">{error}</div>}
 
+                  <div className="auth-underrow">
+                    <label className="auth-remember">
+                      <input type="checkbox" defaultChecked /> <span>Remember me</span>
+                    </label>
+                    <a className="auth-link" href="#" onClick={(e)=>e.preventDefault()}>Forgot Password?</a>
+                  </div>
+
                   <button id="auth-submit" className="primary-auth-button" type="submit" disabled={busy}>
-                    {busy ? 'Please wait…' : 'Sign In'}
+                    {busy ? 'Please wait…' : 'Login'}
                   </button>
+
+                  <div className="auth-divider">
+                    <span>or Sign in with Email</span>
+                  </div>
+
+                  <div className="auth-google-row">
+                    <GoogleSignInButton onBusy={setBusy} setError={setError}/>
+                  </div>
+
+                  <div className="auth-footer">
+                    Not Registered Yet? <a href="#" onClick={(e)=>e.preventDefault()}>Create an account</a>
+                  </div>
                 </form>
               </div>
-
-              <div className="auth-divider"><span /></div>
-              <GoogleSignInButton onBusy={setBusy} setError={setError}/>
             </>
           )}
 
