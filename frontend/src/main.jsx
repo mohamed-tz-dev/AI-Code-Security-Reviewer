@@ -312,6 +312,44 @@ function ScanHistory({ scans, selectedScanId, onSelectScan, onRefresh, loading, 
 }
 
 /* ─── Collapsible Finding ──────────────────────────────────── */
+function SecuredPatchView({ finding }) {
+  const insecure = finding?.evidence || '';
+  const secure   = finding?.secure_patch ?? finding?.securePatch ?? '';
+
+  const hasSecure = Boolean(String(secure).trim());
+
+  return (
+    <div className="code-compare">
+      <div className="code-compare-header">
+        <div className="code-compare-title">Automated AI Remediation &amp; Code Compare</div>
+        <div className="code-compare-subtitle">
+          <span className="cmp-label cmp-insecure">Insecure</span>
+          <span className="cmp-sep">→</span>
+          <span className="cmp-label cmp-secure">Secure patch</span>
+        </div>
+      </div>
+
+      {!hasSecure ? (
+        <div className="empty-state" style={{ minHeight: 90 }}>
+          <div className="empty-state-title">Secure patch haipo kwa finding hii</div>
+          <div className="empty-state-desc">AI haijaweza kutoa patch code kwa sehemu hii (au si saved kwenye secure_patch).</div>
+        </div>
+      ) : (
+        <div className="code-compare-grid">
+          <div className="code-compare-col code-col-insecure">
+            <div className="code-compare-col-title">Insecure (evidence)</div>
+            <pre className="code-pre">{String(insecure || '').trim() ? insecure : 'No evidence provided.'}</pre>
+          </div>
+          <div className="code-compare-col code-col-secure">
+            <div className="code-compare-col-title">Secure (AI secure_patch)</div>
+            <pre className="code-pre">{secure}</pre>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FindingCard({ finding }) {
   const [open, setOpen] = useState(false);
   return (
@@ -329,7 +367,12 @@ function FindingCard({ finding }) {
           {finding.file_path && <div className="finding-location">{finding.file_path}{finding.line_start?`:${finding.line_start}`:''}</div>}
           {finding.description && <p>{finding.description}</p>}
           {finding.recommendation && <div className="recommendation"><span>Remediation</span><p>{finding.recommendation}</p></div>}
+
+          {/* Old behavior: show evidence */}
           {finding.evidence && <pre>{finding.evidence}</pre>}
+
+          {/* New modern diff view */}
+          <SecuredPatchView finding={finding} />
         </div>
       </div>
     </article>

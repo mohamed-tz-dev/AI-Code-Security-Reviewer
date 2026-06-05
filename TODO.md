@@ -1,8 +1,13 @@
-# TODO - Clerk Modern Auth Fixes
+# TODO - AI Code Security Reviewer
 
-- [x] Add backend endpoint `POST /api/auth/clerk` that verifies Clerk token, resolves email, find-or-create user, and issues app JWT.
-- [x] Wire backend route in `backend/src/modules/auth/auth.routes.js`.
-- [x] Update frontend redirect exchange to call `/api/auth/clerk` instead of `/api/auth/google`.
-- [x] Ensure backward compatibility: keep `/api/auth/google` as alias to Clerk auth.
-- [x] Run backend tests.
+## Automated AI Remediation & Code Compare (Side-by-side Diff)
+
+- [x] Verify backend supports patched code field in DB (`secure_patch`).
+- [x] Implement frontend Side-by-side view inside `FindingCard` using:
+  - Left (Insecure): `finding.evidence`
+  - Right (Secure patch): `finding.secure_patch` (fallback `finding.securePatch`)
+- [x] Add CSS for diff view (red/green panels, two-column grid, monospace styling).
+- [x] Quick sanity check by running frontend build / dev and opening a scan with AI findings.
+
+
 
