@@ -43,6 +43,24 @@ const envSchema = z.object({
 
 const parsed = envSchema.parse(process.env);
 
+if (parsed.CLERK_AUTH_ENABLED) {
+  const missingClerkKeys = [];
+  if (!parsed.CLERK_PUBLISHABLE_KEY) {
+    missingClerkKeys.push('CLERK_PUBLISHABLE_KEY');
+  }
+  if (!parsed.CLERK_SECRET_KEY) {
+    missingClerkKeys.push('CLERK_SECRET_KEY');
+  }
+
+  if (missingClerkKeys.length > 0) {
+    throw new Error(
+      `CLERK_AUTH_ENABLED is true but ${missingClerkKeys.join(' and ')} ${
+        missingClerkKeys.length > 1 ? 'are' : 'is'
+      } missing. Set the Clerk keys in your .env or set CLERK_AUTH_ENABLED=false for local development.`
+    );
+  }
+}
+
 const rootDir = path.resolve(__dirname, '..', '..');
 
 const env = {
