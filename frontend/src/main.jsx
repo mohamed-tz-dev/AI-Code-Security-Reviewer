@@ -922,14 +922,97 @@ function SignInScreen({ onAuthenticated }) {
               : 'Sign in to your security dashboard or create a new account.'}
           </p>
 
-          {/* Clerk modern sign-in */}
+          {/* Clerk sign-in using email + username/password providers configured in Clerk dashboard */}
           {CLERK_PUB_KEY && mode !== 'admin' && (
             <>
+              <div className="clerk-form">
+                <div className="clerk-tabs">
+                  <button
+                    type="button"
+                    className={mode === 'login' ? 'active' : ''}
+                    onClick={() => { setMode('login'); setError(''); }}
+                  >
+                    Sign In
+                  </button>
+                  <button
+                    type="button"
+                    className={mode === 'register' ? 'active' : ''}
+                    onClick={() => { setMode('register'); setError(''); }}
+                  >
+                    Sign Up
+                  </button>
+                </div>
+
+                <form
+                  className="auth-form"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    setBusy(true);
+                    setError('');
+
+                    try {
+                      // Use Clerk's signIn object to authenticate with whichever providers
+                      // are enabled in your Clerk dashboard (email/password, username, etc.)
+                      // Note: inputs are optional/varies by provider; we send both email + username.
+                      const payload = {
+                        identifier: email.trim(),
+                        password: password
+                      };
+                      const { signIn } = window.__clerk_signin || {};
+                      if (!signIn) throw new Error('Clerk sign-in not ready.');
+
+                      // authenticateWithPassword works for password-enabled providers.
+                      const { status } = await signIn.authenticateWithPassword(payload);
+
+                      if (status !== 'complete') {
+                        throw new Error('Additional verification required. Please complete sign-in in the redirect flow.');
+                      }
+
+                      // When complete, we ask Clerk for a session token and exchange it for backend JWT.
+                      // This works for all supported providers that result in an authenticated Clerk session.
+                      // We rely on Clerk's redirect flow if needed.
+                      const clerkToken = await signIn.__sessionToken?.();
+                      if (!clerkToken) throw new Error('Unable to retrieve Clerk session token.');
+
+                      const result = await submitAuth('/api/auth/clerk', { clerkToken });
+                      window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(result));
+                      onAuthenticated(result);
+                    } catch (err) {
+                      setError(err?.message || 'Sign-in failed.');
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  <input
+                    id="clerk-identifier"
+                    type="text"
+                    placeholder="Username or email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    autoComplete="username"
+                  />
+                  <input
+                    id="clerk-password"
+                    type="password"
+                    placeholder="Password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    autoComplete="current-password"
+                  />
+
+                  {error && <div className="auth-error" role="alert">{error}</div>}
+
+                  <button id="auth-submit" className="primary-auth-button" type="submit" disabled={busy}>
+                    {busy ? 'Please wait…' : mode === 'register' ? 'Create account' : 'Sign In'}
+                  </button>
+                </form>
+              </div>
+
+              <div className="auth-divider"><span>or sign in with OAuth</span></div>
               <GoogleSignInButton onBusy={setBusy} setError={setError}/>
-              <div className="auth-divider"><span>or continue with other Clerk providers</span></div>
-              <p style={{fontSize:12,color:'var(--text-3)',marginTop:10}}>
-                Use your organization/account email via Clerk (Google, email link, etc.).
-              </p>
             </>
           )}
 
