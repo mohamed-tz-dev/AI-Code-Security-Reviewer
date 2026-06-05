@@ -1,43 +1,19 @@
 const auditRepository = require('../audit/audit.repository');
-const { clerkClient } = require('@clerk/express');
+const userRepository = require('../users/user.repository');
 
-function mapClerkUser(user) {
-  const primaryEmail =
-    user.emailAddresses?.find((email) => email.id === user.primaryEmailAddressId)?.emailAddress ||
-    user.emailAddresses?.[0]?.emailAddress ||
-    null;
-
-  return {
-    id: user.id,
-    email: primaryEmail,
-    firstName: user.firstName,
-    lastName: user.lastName,
-    role: user.publicMetadata?.role === 'admin' ? 'admin' : 'user',
-    createdAt: user.createdAt,
-    lastSignInAt: user.lastSignInAt
-  };
-}
-
-async function listAuditLogs(_req, res) {
+async function listAuditLogs(req, res) {
   const filters = {
-    action: _req.query.action,
-    targetType: _req.query.targetType,
-    actorEmail: _req.query.actorEmail
+    action: req.query.action,
+    targetType: req.query.targetType,
+    actorEmail: req.query.actorEmail
   };
   const auditLogs = await auditRepository.listAuditLogs(filters);
   res.json({ auditLogs });
 }
 
 async function listUsers(_req, res) {
-  const { data, totalCount } = await clerkClient.users.getUserList({
-    limit: 100,
-    orderBy: '-created_at'
-  });
-
-  res.json({
-    users: data.map(mapClerkUser),
-    totalCount
-  });
+  const users = await userRepository.listUsers();
+  res.json({ users, totalCount: users.length });
 }
 
 async function updateUserRole(req, res) {
@@ -49,10 +25,12 @@ async function updateUserRole(req, res) {
     return;
   }
 
-  const publicMetadata = role === 'admin' ? { role: 'admin' } : { role: 'user' };
-  const updatedUser = await clerkClient.users.updateUserMetadata(userId, {
-    publicMetadata
-  });
+  const updatedUser = await userRepository.updateUserRole(userId, role);
+
+  if (!updatedUser) {
+    res.status(404).json({ error: { message: 'User not found.' } });
+    return;
+  }
 
   await auditRepository.createAuditLog({
     actorUserId: req.currentUser.id,
@@ -63,7 +41,7 @@ async function updateUserRole(req, res) {
     metadata: { role }
   });
 
-  res.json({ user: mapClerkUser(updatedUser) });
+  res.json({ user: updatedUser });
 }
 
 module.exports = { listAuditLogs, listUsers, updateUserRole };

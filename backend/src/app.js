@@ -6,6 +6,7 @@ const morgan = require('morgan');
 const { env } = require('./config/env');
 const { errorHandler } = require('./middleware/error-handler');
 const { asyncHandler } = require('./lib/async-handler');
+const { authRoutes } = require('./modules/auth/auth.routes');
 const { adminRoutes } = require('./modules/admin/admin.routes');
 const { scanRoutes } = require('./modules/scans/scan.routes');
 const { settingsRoutes } = require('./modules/settings/settings.routes');
@@ -25,16 +26,6 @@ function createApp() {
   app.use(express.json({ limit: '1mb' }));
   app.use(morgan('dev'));
 
-  if (env.clerkAuthEnabled) {
-    const { clerkMiddleware } = require('@clerk/express');
-    app.use(
-      clerkMiddleware({
-        publishableKey: env.clerkPublishableKey,
-        secretKey: env.clerkSecretKey
-      })
-    );
-  }
-
   app.get('/health', (_req, res) => {
     res.json({
       status: 'ok',
@@ -46,6 +37,7 @@ function createApp() {
     });
   });
 
+  app.use('/api/auth', authRoutes);
   app.use('/api/admin', adminRoutes);
   app.use('/api/scans', scanRoutes);
   app.use('/api/settings', settingsRoutes);
