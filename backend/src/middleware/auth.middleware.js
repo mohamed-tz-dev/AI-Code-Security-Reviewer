@@ -1,36 +1,29 @@
-const { env } = require('../config/env');
-
-function getPrimaryEmail(user) {
-  return user.emailAddresses?.find((email) => email.id === user.primaryEmailAddressId)?.emailAddress || null;
-}
+const userRepository = require('../modules/users/user.repository');
+const { verifyToken } = require('../modules/auth/token.service');
 
 async function attachCurrentUser(req, res, next) {
-  if (!env.clerkAuthEnabled) {
-    req.currentUser = {
-      id: 'dev-user',
-      email: 'dev@example.local',
-      role: 'admin',
-      isAdmin: true
-    };
-    return next();
-  }
+  const authorizationHeader = req.get('authorization') || '';
+  const token = authorizationHeader.startsWith('Bearer ')
+    ? authorizationHeader.slice('Bearer '.length)
+    : null;
+  const claims = token ? verifyToken(token) : null;
 
-  const { clerkClient, getAuth } = require('@clerk/express');
-  const auth = getAuth(req);
-
-  if (!auth.isAuthenticated) {
+  if (!claims?.sub) {
     return res.status(401).json({ error: { message: 'Authentication required.' } });
   }
 
   try {
-    const user = await clerkClient.users.getUser(auth.userId);
-    const role = user.publicMetadata?.role === 'admin' ? 'admin' : 'user';
+    const user = await userRepository.findUserById(claims.sub);
+
+    if (!user) {
+      return res.status(401).json({ error: { message: 'Invalid session.' } });
+    }
 
     req.currentUser = {
-      id: auth.userId,
-      email: getPrimaryEmail(user),
-      role,
-      isAdmin: role === 'admin'
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      isAdmin: user.role === 'admin'
     };
 
     return next();
