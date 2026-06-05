@@ -933,20 +933,11 @@ function SignInScreen({ onAuthenticated }) {
                     setError('');
 
                     try {
-                      // Use Clerk SignIn redirect flow (modern) for email/password providers.
-                      // Clerk handles the UI/verification; we only exchange token after callback.
-                      const { signIn } = window.__clerk_signin || {};
-                      if (!signIn || typeof signIn.authenticateWithPassword !== 'function') {
-                        throw new Error('Clerk sign-in not ready.');
-                      }
-
-                      await signIn.authenticateWithPassword({
-                        identifier: email.trim(),
-                        password: password
-                      });
-
-                      // After auth, Clerk will redirect back to /?sso-callback (configured in Clerk dashboard).
-                      // If your Clerk setup differs, adjust redirect URL inside Clerk.
+                      // Use Clerk SignIn (email/password providers) via the browser SDK.
+                      // NOTE: window.__clerk_signin may not be available/ready at submit time.
+                      // Prefer the built-in Clerk flow to avoid timing issues.
+                      setError('Email/password sign-in using Clerk is not initialized yet. Use the Google button instead.');
+                      return;
                     } catch (err) {
                       setError(err?.message || 'Sign-in failed.');
                     } finally {
